@@ -1,6 +1,12 @@
 section .text
 org 0x100
 		call	GET_DRV_DATA
+		call    SER_INIT
+		;mov		WORD[d_lba], 0x1f00
+		;mov		ax, WORD[sect_cnt]
+		;mov		ax, WORD[sect_cnt+2]
+		;mov		ax, WORD[sect_cnt+4]
+		;mov		ax, WORD[sect_cnt+6]
 		mov		ax, 1
 L_START:mov		cx, [blkcnt]
 		;mov		si, d_lba
@@ -91,7 +97,7 @@ T64_FAIL:
 		
 GET_DRV_DATA:                   ;di,si,dx,cx; ret=ax
         mov     ah,0x48
-        mov     dl,0x81         ;the drive
+        mov     dl,0x80         ;the drive
         xor     di,di           ;prevents bios bugs acc. ctyme
         mov     si,DRVDAT       ;ds register will alreads contain the segment adress(i hope...)
         int     0x13
@@ -103,7 +109,7 @@ READ_DISK_FUNC:
         ;mov     bx,0xffff      ;TESTING
         mov     WORD [db_add], mem_p ;move the adress of mem_p into the db_add location
         mov     [db_add+2], ds  ;move the contents of the segment register into the appropriate location
-        mov     dl, 0x81        ;0x80 is C drive, 0x81 is D drive
+        mov     dl, 0x80        ;0x80 is C drive, 0x81 is D drive
 
         mov     si, DAPACK      ;Pointer to drive data packet
         mov     ah, 0x42        ;extended HD Read
@@ -120,28 +126,41 @@ READ_DISK_FUNC:
 PRINT_FUNC:                     ;x86_64 calling convention di,si,dx,cx ret=ax. di<-point to what to data block. si<-#of values to read, 16 bit number.
         xor     bx,bx
 PF_LP_START:
-        xor     ax,ax           ;Both of these clears are likely not needed
-        xor     dl,dl
         cmp     si, bx          ;if the count equals the second argument loop complete
         je      PF_RET          ;jmp to return instruction
-        mov     ah, 0x02        ;doing a character print
-        mov     dl, [di+bx]     ;Char to print in dl
-		cmp		dl, 84
-		je		PF_LP_PRINT
-		cmp		dl, 85
-		je		PF_LP_PRINT
-		cmp		dl, 86
-		je		PF_LP_PRINT
-;        mov     ax,0            ;
+
+        mov     dx, 3fdh        ;Line status registed
+PF_LP_TEST_REP:
+        in      al, dx
+        test    al,20h
+        jz      PF_LP_TEST_REP
+        mov     al, [di+bx]     ;Char to print in al
+        mov     dx, 3f8h
+        out     dx, al
+
 PF_LP_NEXT:
         add     bx, 1
         jmp     PF_LP_START
-PF_LP_PRINT:
-        int     0x21            ;interrupt 0x21 to DOS
-		jmp		PF_LP_NEXT
+PF_LP_FLAG:
+        jmp     PF_LP_NEXT
 PF_RET: ret                     ;return to the caller function
 
-		
+SER_INIT:
+        mov     al, 83h
+        mov     dx, 3fbh
+        out     dx, al
+        ;set latch and LCR params
+        mov     dx, 3f9h
+        mov     al, 0
+        out     dx, al
+        mov     dx, 3f8h
+        mov     al, 01h
+        out     dx, al
+        ;disable latch, leave lcr params
+        mov     al, 03h
+        mov     dx, 3fbh
+        out     dx, al
+        ret
 		
 section .data
 init_msg: db 'HDREAD3',13,10,'=======',13,10,'$'
@@ -172,5 +191,5 @@ d_lba:  dd      0x0             ;the block to read -- start at 0;
 
 d_lba_try:dd    0x0
           dd    0x0
-
+section	.bss
 mem_p:  resb    8192
